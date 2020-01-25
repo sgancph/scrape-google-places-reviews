@@ -1,0 +1,19 @@
+{
+  "name": "scrape-google-places-reviews",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sgancph/scrape-google-places-reviews.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sgancph/scrape-google-places-reviews/issues"
+  },
+  "homepage": "https://github.com/sgancph/scrape-google-places-reviews#readme"
+}
