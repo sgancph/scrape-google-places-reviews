@@ -1,5 +1,6 @@
 const axios = require("axios");
 const dotenv = require("dotenv");
+const { Parser } = require("json2csv");
 
 dotenv.config();
 
@@ -28,26 +29,58 @@ const getPlaceById = async placeId => {
   return axios.get(url);
 };
 
-const formatPlaces = places =>
-  places.map(place => {
-    const {
-      name,
-      rating,
-      user_ratings_total,
-      reviews,
-      website
-    } = place.data.result;
-    return { name, rating, user_ratings_total, reviews, website };
-  });
-
 const runScript = async () => {
-  const placeIds = await getPlaceIds();
-  const places = await Promise.all(
-    placeIds.map(placeId => getPlaceById(placeId))
-  );
-  const placesFormatted = formatPlaces(places);
+  // Request places from API
+  try {
+    const placeIds = await getPlaceIds();
+    const places = await Promise.all(
+      placeIds.map(placeId => getPlaceById(placeId))
+    );
 
-  console.dir(placesFormatted, { depth: null });
+    // Format places
+    const placesFormatted = places.map(place => {
+      const {
+        place_id,
+        name,
+        rating,
+        user_ratings_total,
+        website
+      } = place.data.result;
+      return { place_id, name, rating, user_ratings_total, website };
+    });
+
+    // Format reviews
+    const reviewsFormatted = places.reduce((accumulator, place) => {
+      const { place_id, name, reviews } = place.data.result;
+      return accumulator.concat(
+        reviews.map(review => {
+          return {
+            place_id,
+            name,
+            author: review.author_name,
+            rating: review.rating,
+            text: review.text,
+            time: review.time
+          };
+        })
+      );
+    }, []);
+
+    // Convert to CSV
+    try {
+      const json2csvParser = new Parser();
+
+      const csvPlaces = json2csvParser.parse(placesFormatted);
+      const csvReviews = json2csvParser.parse(reviewsFormatted);
+
+      console.log(csvPlaces);
+      console.log(csvReviews);
+    } catch (err) {
+      console.log(err);
+    }
+  } catch (err) {
+    console.log(err);
+  }
 };
 
 runScript();
