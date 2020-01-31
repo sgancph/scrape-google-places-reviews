@@ -1,27 +1,16 @@
 const axios = require("axios");
 const dotenv = require("dotenv");
+const fs = require("fs");
+const async = require("async");
 const { Parser } = require("json2csv");
 
 dotenv.config();
 
 const GOOGLE_PLACES_BASE_URL = "https://maps.googleapis.com/maps/api/place";
-const TYPE = "";
-const RADIUS = 10000;
-const LOCATION = "45.4642,9.1900";
-const KEYWORD = "centro diagnostico";
-const MAX_NUM_PLACES = 10;
 
-const getPlaceIds = async (placeIds = [], pageToken = null) => {
-  const url = `${GOOGLE_PLACES_BASE_URL}/nearbysearch/json?key=${process.env.GOOGLE_PLACES_API_KEY}&location=${LOCATION}&radius=${RADIUS}&keyword=${KEYWORD}&page_token=${pageToken}`;
-  const response = await axios.get(url);
-  const { results, next_page_token } = response.data;
-  const newPlaceIds = results.map(result => result.place_id);
-  const allPlaceIds = placeIds.concat(newPlaceIds);
-
-  // Call function recursively
-  return next_page_token && placeIds.length < MAX_NUM_PLACES
-    ? getPlaceIds(allPlaceIds, next_page_token)
-    : allPlaceIds;
+const getPlaceIds = async (keyword, location, radius) => {
+  const url = `${GOOGLE_PLACES_BASE_URL}/nearbysearch/json?key=${process.env.GOOGLE_PLACES_API_KEY}&location=${location}&radius=${radius}&keyword=${keyword}`;
+  return axios(url);
 };
 
 const getPlaceById = async placeId => {
@@ -30,15 +19,64 @@ const getPlaceById = async placeId => {
 };
 
 const runScript = async () => {
-  // Request places from API
   try {
-    const placeIds = await getPlaceIds();
+    // Keywords and locations
+    const keywords = [
+      "AMBULATORIO DIAGNOSTICO",
+      "POLIAMBULATORIO",
+      "CENTRO MEDICO",
+      "STUDIO ASSOCIATO MEDICI",
+      "VISITE SANITARIE SPECIALISTICHE PRIVATE",
+      "CENTRO MEDICO SPECIALISTICO"
+    ];
+    const locations = [
+      { location: "41.1171,16.8719", radius: 5000 },
+      { location: "45.6983,9.6773", radius: 4000 },
+      { location: "44.4949,11.3426", radius: 4000 },
+      { location: "43.7696,11.2558", radius: 4000 },
+      { location: "40.3515,18.1750", radius: 3000 },
+      { location: "45.4642,9.1900", radius: 6000 },
+      { location: "45.4064,11.8768", radius: 4000 },
+      { location: "45.0526, 9.6930", radius: 3000 },
+      { location: "43.7228,10.4017", radius: 3000 },
+      { location: "41.9028,12.4964", radius: 8000 },
+      { location: "45.4384,10.9916", radius: 6000 }
+    ];
+
+    // Combinations
+    const combinations = keywords.flatMap(keyword =>
+      locations.map(location =>
+        getPlaceIds(keyword, location.location, location.radius)
+      )
+    );
+
+    // Request places from API
+    const requests = await Promise.all(combinations);
+
+    // Place IDs
+    const placeIds = requests.reduce(
+      (accumulator, request) =>
+        accumulator.concat(request.data.results.map(result => result.place_id)),
+      []
+    );
+
+    // Request place details
     const places = await Promise.all(
       placeIds.map(placeId => getPlaceById(placeId))
     );
 
+    // Clean
+    const placesCleaned = places.filter(
+      place =>
+        !!place.data.result &&
+        place.data.result.reviews &&
+        place.data.result.reviews.length
+    );
+
+    console.log(placeIds);
+
     // Format places
-    const placesFormatted = places.map(place => {
+    const placesFormatted = placesCleaned.map(place => {
       const {
         place_id,
         name,
@@ -50,7 +88,7 @@ const runScript = async () => {
     });
 
     // Format reviews
-    const reviewsFormatted = places.reduce((accumulator, place) => {
+    const reviewsFormatted = placesCleaned.reduce((accumulator, place) => {
       const { place_id, name, reviews } = place.data.result;
       return accumulator.concat(
         reviews.map(review => {
@@ -67,16 +105,34 @@ const runScript = async () => {
     }, []);
 
     // Convert to CSV
-    try {
-      const json2csvParser = new Parser();
+    if (placesFormatted.length && reviewsFormatted.length) {
+      // Parsers
+      const json2csvParserPlaces = new Parser();
+      const json2csvParserReviews = new Parser();
 
-      const csvPlaces = json2csvParser.parse(placesFormatted);
-      const csvReviews = json2csvParser.parse(reviewsFormatted);
+      // Parse
+      const csvPlaces = json2csvParserPlaces.parse(placesFormatted);
+      const csvReviews = json2csvParserReviews.parse(reviewsFormatted);
 
-      console.log(csvPlaces);
-      console.log(csvReviews);
-    } catch (err) {
-      console.log(err);
+      // Write
+      await async.parallel([
+        () => {
+          fs.writeFile("reviews.csv", csvReviews, () =>
+            console.log("reviews saved")
+          );
+        },
+        () => {
+          fs.writeFile("places.csv", csvPlaces, () =>
+            console.log("places saved")
+          );
+        }
+      ]);
+    } else {
+      console.log(placeIds);
+      console.log(placesCleaned);
+      console.log(
+        `${placesFormatted.length} places and ${reviewsFormatted.length} reviews`
+      );
     }
   } catch (err) {
     console.log(err);
